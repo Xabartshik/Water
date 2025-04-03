@@ -1,0 +1,12 @@
+﻿<Window x:Class="Water.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:helix="http://helix-toolkit.org/wpf"
+        Title="Voxel Water Simulation" Height="720" Width="1280">
+    <Grid>
+        <!-- Визуализация 3D-сцены -->
+        <helix:HelixViewport3D Name="MainViewport" ZoomExtentsWhenLoaded="True" ShowCoordinateSystem="True">
+            <helix:SunLight/>
+        </helix:HelixViewport3D>
+    </Grid>
+</Window>
