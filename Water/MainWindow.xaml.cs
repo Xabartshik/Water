@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media.Media3D;
 using BulletSharp;
+using BulletSharp.Math;
 using HelixToolkit.Wpf;
 
 namespace Water
@@ -12,6 +13,9 @@ namespace Water
         // Основные переменные
         private List<ModelVisual3D> waterVoxels = new List<ModelVisual3D>();
         private const int MaxVoxels = 300;
+        // Частота появления воды (капель в секунду)
+        private double waterSpawnRate = 3; // 3 капель в секунду
+        private DateTime lastSpawnTime = DateTime.Now;
 
         // Физический мир
         private DiscreteDynamicsWorld physicsWorld;
@@ -27,6 +31,78 @@ namespace Water
             InitializePhysics();
             StartSimulation();
             physicsWorld.DebugDrawWorld();
+            // Добавляем обработчик столкновений
+            physicsWorld.SetInternalTickCallback(CollisionCallback, true);
+        }
+
+        // Обработчик столкновений
+        private void CollisionCallback(DynamicsWorld world, float timeStep)
+        {
+            int numManifolds = world.Dispatcher.NumManifolds;
+
+            for (int i = 0; i < numManifolds; i++)
+            {
+                PersistentManifold contactManifold = world.Dispatcher.GetManifoldByIndexInternal(i);
+                CollisionObject obA = contactManifold.Body0 as CollisionObject;
+                CollisionObject obB = contactManifold.Body1 as CollisionObject;
+
+                RigidBody bodyA = obA as RigidBody;
+                RigidBody bodyB = obB as RigidBody;
+
+                // Проверяем, что оба объекта - RigidBody и хотя бы один из них - капля воды
+                if (bodyA != null && bodyB != null)
+                {
+
+                    for (int j = 0; j < contactManifold.NumContacts; j++)
+                    {
+                        ManifoldPoint pt = contactManifold.GetContactPoint(j);
+                        if (pt.Distance < 0.0f)
+                        {
+                            // Столкновение произошло
+
+                            // Получение направления движения (нормаль контакта)
+                            BulletSharp.Math.Vector3 collisionNormal = pt.NormalWorldOnB;
+
+
+                            //// Обработка столкновения waterVoxel - waterVoxel
+                            if (bodyA.UserObject?.ToString() == "waterVoxel" && bodyB.UserObject?.ToString() == "waterVoxel")
+                            {
+
+                                // Направление вверх
+                                // Вычисляем относительную скорость
+                                Vector3 relativeVelocity = bodyB.LinearVelocity - bodyA.LinearVelocity;
+
+                                // Нормаль от A к B
+                                Vector3 normal = pt.NormalWorldOnB;
+
+                                // Вычисляем импульс (0.95 --- коэф потери энергии)
+                                float impulseMagnitude = (float)(-(1 + 0.95) * relativeVelocity.Dot(normal) / (bodyA.InvMass + bodyB.InvMass));
+                                Vector3 impulse = impulseMagnitude * normal;
+
+
+                                // Применяем импульс к вокселям
+                                bodyA.LinearVelocity -= impulse * bodyA.InvMass;
+                                bodyB.LinearVelocity += impulse * bodyB.InvMass;
+                            }
+                            // Обработка столкновения waterVoxel - static
+                            else if (bodyA.UserObject?.ToString() == "waterVoxel" && bodyB.UserObject?.ToString() == "static")
+                            {
+                                // Направление вверх, увеличение скорости
+                                BulletSharp.Math.Vector3 newVelocity = bodyA.LinearVelocity - 2 * bodyA.LinearVelocity.Dot(collisionNormal) * collisionNormal;
+                                bodyA.LinearVelocity = newVelocity;
+                            }
+                            else if (bodyB.UserObject?.ToString() == "waterVoxel" && bodyA.UserObject?.ToString() == "static")
+                            {
+                                // Направление вверх, увеличение скорости
+                                BulletSharp.Math.Vector3 newVelocity = bodyB.LinearVelocity - 2 * bodyB.LinearVelocity.Dot(collisionNormal) * collisionNormal;
+                                bodyB.LinearVelocity = newVelocity;
+                            }
+
+
+                        }
+                    }
+                }
+            }
         }
 
         // Инициализация 3D-сцены
@@ -38,7 +114,7 @@ namespace Water
                 Width = 4,
                 Length = 4,
                 Material = new DiffuseMaterial(System.Windows.Media.Brushes.DarkBlue),
-                Transform = new TranslateTransform3D(0, 0, 1.5f) // Теперь Z=0 — это дно
+                Transform = new TranslateTransform3D(0, 0, 1.625f) // Теперь Z=0 — это дно
             };
             MainViewport.Children.Add(poolBottom);
 
@@ -206,6 +282,13 @@ namespace Water
 
         private void GenerateWaterVoxel()
         {
+            // Контроль частоты появления воды
+            if ((DateTime.Now - lastSpawnTime).TotalSeconds < 1.0 / waterSpawnRate)
+            {
+                return;
+            }
+            lastSpawnTime = DateTime.Now;
+
             var sphere = new SphereVisual3D
             {
                 Radius = 0.1, // Smaller radius
@@ -223,6 +306,7 @@ namespace Water
             // Было: new BulletSharp.Math.Vector3(-2, 2, 0)
             var motionState = new DefaultMotionState(new BulletSharp.Math.Matrix { Origin = new BulletSharp.Math.Vector3(0, 0, 6) });
             var body = new RigidBody(new RigidBodyConstructionInfo(mass, motionState, shape, localInertia));
+            body.UserObject = "waterVoxel";
 
             var rand = new Random();
             // Было: new BulletSharp.Math.Vector3(0, -1, 0)
@@ -264,4 +348,6 @@ namespace Water
 
 
     }
+
+
 }
